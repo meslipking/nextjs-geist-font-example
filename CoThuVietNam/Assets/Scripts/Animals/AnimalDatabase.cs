@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 
 [CreateAssetMenu(fileName = "AnimalDatabase", menuName = "CoThuVietNam/AnimalDatabase")]
-public class AnimalDatabase : ScriptableObject
+public partial class AnimalDatabase
 {
     [System.Serializable]
     public class AnimalEntry
