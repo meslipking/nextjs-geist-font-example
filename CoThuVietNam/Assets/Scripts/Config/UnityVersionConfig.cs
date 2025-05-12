@@ -2,28 +2,65 @@ using UnityEngine;
 
 public class UnityVersionConfig : ScriptableObject
 {
-    public const string UNITY_VERSION = "2022.3 LTS"; // Unity 2022 Long Term Support
-    public const string MIN_UNITY_VERSION = "2021.3";
-    public const string MAX_UNITY_VERSION = "2023.1";
+    public const string UNITY_VERSION = "2022.3.61f1";
+    public const string MIN_UNITY_VERSION = "2022.3.0f1";
+    public const string MAX_UNITY_VERSION = "2022.3.99f1";
 
     [Header("Version Information")]
     [SerializeField] private string targetUnityVersion = UNITY_VERSION;
     [SerializeField] private string minimumUnityVersion = MIN_UNITY_VERSION;
     [SerializeField] private string maximumUnityVersion = MAX_UNITY_VERSION;
 
-    [Header("Feature Requirements")]
-    public bool requiresURP = true;           // Universal Render Pipeline
-    public bool requiresNewInputSystem = true; // Input System Package
-    public bool requiresTextMeshPro = true;   // TextMeshPro Package
-    public bool requiresDOTween = true;       // DOTween Asset
-    public bool requiresAddressables = true;  // Addressables System
+    [Header("Required Packages")]
+    public PackageRequirement[] requiredPackages = new PackageRequirement[]
+    {
+        new PackageRequirement("com.unity.render-pipelines.universal", "14.0.8"),  // URP
+        new PackageRequirement("com.unity.inputsystem", "1.7.0"),                  // New Input System
+        new PackageRequirement("com.unity.textmeshpro", "3.0.6"),                 // TextMeshPro
+        new PackageRequirement("com.unity.addressables", "1.21.19"),              // Addressables
+        new PackageRequirement("com.unity.visualscripting", "1.9.0"),            // Visual Scripting
+        new PackageRequirement("com.unity.mathematics", "1.2.6"),                // Mathematics
+        new PackageRequirement("com.unity.burst", "1.8.8"),                      // Burst Compiler
+        new PackageRequirement("com.unity.collections", "1.2.4"),               // Collections
+    };
 
-    [Header("Package Versions")]
-    public string urpVersion = "14.0.8";
-    public string inputSystemVersion = "1.7.0";
-    public string tmpVersion = "3.0.6";
-    public string doTweenVersion = "1.2.705";
-    public string addressablesVersion = "1.21.19";
+    [System.Serializable]
+    public class PackageRequirement
+    {
+        public string packageId;
+        public string minimumVersion;
+        public bool isRequired = true;
+
+        public PackageRequirement(string id, string version, bool required = true)
+        {
+            packageId = id;
+            minimumVersion = version;
+            isRequired = required;
+        }
+    }
+
+    [Header("Build Settings")]
+    public BuildRequirements buildRequirements = new BuildRequirements
+    {
+        scriptingBackend = ScriptingBackend.IL2CPP,
+        apiCompatibility = ApiCompatibilityLevel.NET_Standard_2_1,
+        allowUnsafeCode = true,
+        optimizeMesh = true,
+        stripEngineCode = true
+    };
+
+    [System.Serializable]
+    public class BuildRequirements
+    {
+        public enum ScriptingBackend { Mono, IL2CPP }
+        public enum ApiCompatibilityLevel { NET_Standard_2_0, NET_Standard_2_1 }
+
+        public ScriptingBackend scriptingBackend;
+        public ApiCompatibilityLevel apiCompatibility;
+        public bool allowUnsafeCode;
+        public bool optimizeMesh;
+        public bool stripEngineCode;
+    }
 
     public void ValidateUnityVersion()
     {
@@ -43,59 +80,65 @@ public class UnityVersionConfig : ScriptableObject
             Debug.LogWarning($"Unity version {currentVersion} is above maximum tested version {maximumUnityVersion}");
         }
 
-        // Feature compatibility checks
-        ValidateRequiredFeatures();
+        // Package validation
+        ValidatePackages();
+        
+        // Build settings validation
+        ValidateBuildSettings();
         #endif
     }
 
-    private void ValidateRequiredFeatures()
+    #if UNITY_EDITOR
+    private void ValidatePackages()
     {
-        #if UNITY_EDITOR
-        if (requiresURP)
+        foreach (var package in requiredPackages)
         {
-            ValidatePackage("com.unity.render-pipelines.universal", urpVersion);
-        }
-
-        if (requiresNewInputSystem)
-        {
-            ValidatePackage("com.unity.inputsystem", inputSystemVersion);
-        }
-
-        if (requiresTextMeshPro)
-        {
-            ValidatePackage("com.unity.textmeshpro", tmpVersion);
-        }
-
-        if (requiresAddressables)
-        {
-            ValidatePackage("com.unity.addressables", addressablesVersion);
-        }
-
-        // DOTween check (Asset Store package)
-        if (requiresDOTween)
-        {
-            if (!UnityEditorInternal.InternalEditorUtility.HasPro())
+            UnityEditor.PackageManager.PackageInfo packageInfo = 
+                UnityEditor.PackageManager.PackageInfo.FindForAssetPath(package.packageId);
+                
+            if (packageInfo == null)
             {
-                Debug.LogWarning("Unity Pro/Plus license recommended for DOTween Pro usage");
+                if (package.isRequired)
+                {
+                    Debug.LogError($"Required package {package.packageId} is not installed");
+                }
+                else
+                {
+                    Debug.LogWarning($"Recommended package {package.packageId} is not installed");
+                }
+            }
+            else if (CompareVersions(packageInfo.version, package.minimumVersion) < 0)
+            {
+                Debug.LogWarning($"Package {package.packageId} version {packageInfo.version} is below recommended version {package.minimumVersion}");
             }
         }
-        #endif
     }
 
-    private void ValidatePackage(string packageId, string requiredVersion)
+    private void ValidateBuildSettings()
     {
-        #if UNITY_EDITOR
-        UnityEditor.PackageManager.PackageInfo packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath(packageId);
-        if (packageInfo == null)
+        // Validate Scripting Backend
+        if (UnityEditor.PlayerSettings.GetScriptingBackend(UnityEditor.BuildTargetGroup.Standalone) 
+            != UnityEditor.ScriptingImplementation.IL2CPP && 
+            buildRequirements.scriptingBackend == BuildRequirements.ScriptingBackend.IL2CPP)
         {
-            Debug.LogError($"Required package {packageId} is not installed");
+            Debug.LogError("Project requires IL2CPP scripting backend");
         }
-        else if (CompareVersions(packageInfo.version, requiredVersion) < 0)
+
+        // Validate API Compatibility Level
+        if (UnityEditor.PlayerSettings.GetApiCompatibilityLevel(UnityEditor.BuildTargetGroup.Standalone) 
+            != UnityEditor.ApiCompatibilityLevel.NET_Standard_2_1 &&
+            buildRequirements.apiCompatibility == BuildRequirements.ApiCompatibilityLevel.NET_Standard_2_1)
         {
-            Debug.LogWarning($"Package {packageId} version {packageInfo.version} is below recommended version {requiredVersion}");
+            Debug.LogError("Project requires .NET Standard 2.1 API Compatibility Level");
         }
-        #endif
+
+        // Validate other build settings
+        if (buildRequirements.allowUnsafeCode && !UnityEditor.PlayerSettings.allowUnsafeCode)
+        {
+            Debug.LogError("Project requires unsafe code to be enabled");
+        }
     }
+    #endif
 
     private int CompareVersions(string version1, string version2)
     {
